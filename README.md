@@ -1,3 +1,0 @@
-# mcp
-
-My MCP project.
