@@ -31,3 +31,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+.agents/
+AGENTS.md
+PLAN.md
+provider.json
+skills-lock.json
