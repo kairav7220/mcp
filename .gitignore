@@ -35,5 +35,12 @@ Thumbs.db
 .agents/
 AGENTS.md
 PLAN.md
+CONV.md
 provider.json
 skills-lock.json
+nango-mcp/
+nango-selfhosted/
+
+# Gateway / Control Plane secrets
+gateway/.env
+control-plane/.env

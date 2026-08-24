@@ -1,0 +1,24 @@
+# ── Gateway (FastMCP + Nango proxy) ──────────────────────────────
+fastmcp>=4.0.0b3            # MCP server framework (pre-release — install with pip install --pre)
+mcp>=2.0                    # MCP protocol SDK v2 (stateless 2026-07-28 spec)
+httpx>=0.28                 # async HTTP client — Nango proxy, API calls
+pydantic>=2.10              # validation, JSON schema, tool param models
+uvicorn>=0.30               # ASGI server (run the gateway)
+python-dotenv>=1.0          # .env file loading
+
+# ── Storage & crypto ─────────────────────────────────────────────
+redis[hiredis]>=8.0         # async Redis — rate limits, cache, counters, key lookups
+py-key-value-aio>=0.3       # pluggable key-value storage backends (FastMCP storage)
+cryptography>=49.0          # Fernet encryption for stored tokens/keys
+
+# ── Database ─────────────────────────────────────────────────────
+asyncpg>=0.30               # async Postgres driver
+
+# ── Control plane (FastAPI) — placeholder for Phase 4 ────────────
+fastapi>=0.115              # API framework
+sqlmodel>=0.0.25            # SQLAlchemy + Pydantic hybrid (models, migrations)
+pyjwt>=2.8                  # JWT verification (managed login tokens, e.g. Supabase)
+
+# ── Testing ──────────────────────────────────────────────────────
+pytest>=9.0
+pytest-asyncio>=1.0
