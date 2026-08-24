@@ -9,7 +9,7 @@ venv/
 !.env.example
 
 # Python
-__pycache__/
+*__pycache__/
 *.py[cod]
 *.egg-info/
 dist/
@@ -40,6 +40,17 @@ provider.json
 skills-lock.json
 nango-mcp/
 nango-selfhosted/
+
+# Caches & tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Archived / scratch
+archive/
+archive_*/
 
 # Gateway / Control Plane secrets
 gateway/.env
