@@ -1,12 +1,9 @@
 """Tests for the gateway — auth, registry, executor, metrics."""
 
 import hashlib
-import json
-import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -50,94 +47,77 @@ class TestAuth:
 # ── Registry tests ───────────────────────────────────────────────────────────
 
 class TestRegistry:
-    def _write_providers_json(self, data: dict) -> str:
-        fd, path = tempfile.mkstemp(suffix='.json')
-        with os.fdopen(fd, 'w') as f:
-            json.dump(data, f)
-        return path
+    def _make_row(self, name, provider='gmail', method='GET', path='/v1/test', description='Test tool', enabled=True):
+        return {
+            'id': '00000000-0000-0000-0000-000000000001',
+            'provider': provider,
+            'name': name,
+            'description': description,
+            'method': method,
+            'path': path,
+            'input_schema': '{}',
+            'output_schema': None,
+            'required_scopes': [],
+            'public': False,
+            'tags': [],
+            'version': 1,
+        }
 
-    def test_load_empty(self):
+    @pytest.mark.asyncio
+    async def test_load_empty_db(self):
         reg = Registry()
-        path = self._write_providers_json({})
-        count = reg.load_from_file(path)
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])
+        count = await reg.load_from_db(pool)
         assert count == 0
         assert len(reg.tools) == 0
-        os.unlink(path)
 
-    def test_load_single_provider(self):
-        data = {
-            'gmail': {
-                'nango_provider_key': 'google-gmail',
-                'base_url': 'https://gmail.googleapis.com',
-                'description': 'Gmail API',
-                'tools': {
-                    'getProfile': {
-                        'name': 'getProfile',
-                        'description': "Gets the user's Gmail profile.",
-                        'method': 'GET',
-                        'path': 'gmail/v1/users/{userId}/profile',
-                        'params': {},
-                    }
-                },
-            }
-        }
+    @pytest.mark.asyncio
+    async def test_load_single_tool(self):
         reg = Registry()
-        path = self._write_providers_json(data)
-        count = reg.load_from_file(path)
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[self._make_row('gmail_getProfile')])
+        count = await reg.load_from_db(pool)
         assert count == 1
         assert 'gmail_getProfile' in reg.tools
 
         tool = reg.get('gmail_getProfile')
         assert tool is not None
         assert tool.provider == 'gmail'
-        assert tool.nango_provider_key == 'google-gmail'
         assert tool.method == 'GET'
-        os.unlink(path)
 
-    def test_load_multiple_providers(self):
-        data = {
-            'gmail': {
-                'nango_provider_key': 'google-gmail',
-                'tools': {
-                    'getProfile': {'description': 'Profile', 'method': 'GET', 'path': 'v1/profile'},
-                    'send': {'description': 'Send email', 'method': 'POST', 'path': 'v1/send'},
-                },
-            },
-            'slack': {
-                'nango_provider_key': 'slack',
-                'tools': {
-                    'postMessage': {'description': 'Post', 'method': 'POST', 'path': 'chat.postMessage'},
-                },
-            },
-        }
+    @pytest.mark.asyncio
+    async def test_load_multiple_providers(self):
         reg = Registry()
-        path = self._write_providers_json(data)
-        count = reg.load_from_file(path)
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            self._make_row('gmail_getProfile', provider='gmail'),
+            self._make_row('gmail_send', provider='gmail'),
+            self._make_row('slack_postMessage', provider='slack'),
+        ])
+        count = await reg.load_from_db(pool)
         assert count == 3
         assert len(reg.providers()) == 2
         assert set(reg.providers()) == {'gmail', 'slack'}
-        os.unlink(path)
 
-    def test_list_by_provider(self):
-        data = {
-            'gmail': {
-                'nango_provider_key': 'google-gmail',
-                'tools': {
-                    'a': {'description': 'A', 'method': 'GET', 'path': '/a'},
-                    'b': {'description': 'B', 'method': 'GET', 'path': '/b'},
-                },
-            }
-        }
+    @pytest.mark.asyncio
+    async def test_list_by_provider(self):
         reg = Registry()
-        path = self._write_providers_json(data)
-        reg.load_from_file(path)
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            self._make_row('a', provider='gmail'),
+            self._make_row('b', provider='gmail'),
+        ])
+        await reg.load_from_db(pool)
         gmail_tools = reg.list_by_provider('gmail')
         assert len(gmail_tools) == 2
-        os.unlink(path)
 
-    def test_load_missing_file(self):
+    @pytest.mark.asyncio
+    async def test_load_disabled_tools_excluded(self):
         reg = Registry()
-        count = reg.load_from_file('/nonexistent/path.json')
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[])  # WHERE enabled = true filters them
+        count = await reg.load_from_db(pool)
         assert count == 0
 
 

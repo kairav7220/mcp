@@ -2,7 +2,7 @@
 
 Extracts the Bearer token from the Authorization header, hashes it with SHA-256,
 looks up the key in `api_keys` (joined with `users`), checks revoked/expired/status,
-and returns (user_id, api_key_id).
+and returns (user_id, api_key_id, allowed_tools).
 
 `user_id` is NEVER accepted from tool arguments — always derived from the key.
 """
@@ -17,9 +17,8 @@ import asyncpg
 
 log = logging.getLogger(__name__)
 
-# ── In-memory key cache (key_hash → (expiry, user_id, api_key_id)) ───────────
-# Phase 1: simple dict. Phase 2: Redis.
-_key_cache: dict[str, tuple[float, str, str | None]] = {}
+# In-memory key cache: key_hash → (expiry, user_id, api_key_id, allowed_tools)
+_key_cache: dict[str, tuple[float, str, str | None, list[str]]] = {}
 _CACHE_TTL = 60  # seconds
 
 
@@ -37,18 +36,18 @@ def _extract_bearer(authorization: str | None) -> str | None:
     return None
 
 
-async def _lookup_key(pool: asyncpg.Pool, key_hash: str) -> tuple[str, str | None] | None:
-    """Return (user_id, api_key_id) or None if key is invalid."""
+async def _lookup_key(pool: asyncpg.Pool, key_hash: str) -> tuple[str, str | None, list[str]] | None:
+    """Return (user_id, api_key_id, allowed_tools) or None if key is invalid."""
     now = time.time()
 
     cached = _key_cache.get(key_hash)
     if cached and cached[0] > now:
-        return cached[1], cached[2]
+        return cached[1], cached[2], cached[3]
 
     row = await pool.fetchrow(
         """
         SELECT ak.id AS api_key_id, ak.user_id, ak.revoked_at, ak.expires_at,
-               u.status AS user_status
+               ak.scopes, u.status AS user_status
         FROM api_keys ak
         JOIN users u ON u.id = ak.user_id
         WHERE ak.key_hash = $1
@@ -56,7 +55,7 @@ async def _lookup_key(pool: asyncpg.Pool, key_hash: str) -> tuple[str, str | Non
         key_hash,
     )
     if row is None:
-        _key_cache[key_hash] = (now + _CACHE_TTL, "", None)
+        _key_cache[key_hash] = (now + _CACHE_TTL, "", None, [])
         return None
 
     if row["revoked_at"] is not None:
@@ -73,16 +72,17 @@ async def _lookup_key(pool: asyncpg.Pool, key_hash: str) -> tuple[str, str | Non
 
     user_id = str(row["user_id"])
     api_key_id = str(row["api_key_id"])
+    allowed_tools = list(row["scopes"] or [])
 
-    _key_cache[key_hash] = (now + _CACHE_TTL, user_id, api_key_id)
-    return user_id, api_key_id
+    _key_cache[key_hash] = (now + _CACHE_TTL, user_id, api_key_id, allowed_tools)
+    return user_id, api_key_id, allowed_tools
 
 
 async def authenticate_request(
     authorization: str | None,
     pool: asyncpg.Pool,
-) -> tuple[str, str] | None:
-    """Validate bearer token. Returns (user_id, api_key_id) or None."""
+) -> tuple[str, str, list[str]] | None:
+    """Validate bearer token. Returns (user_id, api_key_id, allowed_tools) or None."""
     raw_key = _extract_bearer(authorization)
     if raw_key is None:
         return None

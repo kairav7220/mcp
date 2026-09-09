@@ -4,7 +4,7 @@ node_modules/
 venv/
 
 # Environment
-.env
+*.env
 .env.*
 !.env.example
 
@@ -35,6 +35,7 @@ Thumbs.db
 .agents/
 AGENTS.md
 PLAN.md
+GAPS.md
 CONV.md
 provider.json
 skills-lock.json
@@ -55,3 +56,6 @@ archive_*/
 # Gateway / Control Plane secrets
 gateway/.env
 control-plane/.env
+
+# Google OAuth client secret (login provider credentials)
+client_secret_*.json

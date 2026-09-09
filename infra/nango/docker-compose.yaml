@@ -1,0 +1,58 @@
+services:
+  nango-db:
+    image: postgres:16.0-alpine
+    container_name: nango-v2-db
+    environment:
+      POSTGRES_PASSWORD: ${NANGO_DB_PASSWORD:?NANGO_DB_PASSWORD must be set}
+      POSTGRES_USER: ${NANGO_DB_USER:-nango}
+      POSTGRES_DB: nango
+    volumes:
+      - nango-db-data:/var/lib/postgresql/data
+    networks:
+      - nango
+    # Not exposed to host — only reachable inside nango network
+
+  nango-server:
+    image: nangohq/nango-server:hosted-0.71.5
+    container_name: nango-v2-server
+    environment:
+      - NANGO_ENCRYPTION_KEY=${NANGO_ENCRYPTION_KEY:?NANGO_ENCRYPTION_KEY must be set}
+      - NANGO_DB_USER=${NANGO_DB_USER:-nango}
+      - NANGO_DB_PASSWORD=${NANGO_DB_PASSWORD}
+      - NANGO_DB_HOST=${NANGO_DB_HOST:-nango-db}
+      - NANGO_DB_PORT=${NANGO_DB_PORT:-5432}
+      - NANGO_DB_NAME=${NANGO_DB_NAME:-nango}
+      - NANGO_DB_SSL=${NANGO_DB_SSL:-false}
+      - SERVER_PORT=${SERVER_PORT:-3003}
+      - NANGO_SERVER_URL=${NANGO_SERVER_URL:-http://localhost:3003}
+      - NANGO_PUBLIC_SERVER_URL=${NANGO_PUBLIC_SERVER_URL:-http://localhost:3003}
+      - NANGO_PUBLIC_CONNECT_URL=${NANGO_PUBLIC_CONNECT_URL:-http://localhost:3009}
+      - FLAG_SERVE_CONNECT_UI=${FLAG_SERVE_CONNECT_UI:-true}
+      - FLAG_AUTH_ENABLED=${FLAG_AUTH_ENABLED:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - NANGO_CORS_ORIGINS=${NANGO_CORS_ORIGINS:-http://localhost:3003,http://localhost:3009}
+      - NANGO_SERVER_WEBSOCKETS_PATH=${NANGO_SERVER_WEBSOCKETS_PATH:-/connect}
+      - RECORDS_DATABASE_URL=${RECORDS_DATABASE_URL:-postgresql://nango:${NANGO_DB_PASSWORD}@nango-db:5432/nango}
+      - CSP_REPORT_ONLY=true
+    restart: always
+    ports:
+      - '${SERVER_PORT:-3003}:${SERVER_PORT:-3003}'
+      - '${CONNECT_UI_PORT:-3009}:${CONNECT_UI_PORT:-3009}'
+    depends_on:
+      - nango-db
+    networks:
+      - nango
+
+  nango-redis:
+    image: redis:7.2.4
+    container_name: nango-v2-redis
+    networks:
+      - nango
+    # Not exposed to host — internal network only
+
+networks:
+  nango:
+
+volumes:
+  nango-db-data:
+    driver: local

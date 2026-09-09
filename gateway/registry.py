@@ -1,22 +1,15 @@
-"""Tool registry — loads providers.json at startup and registers tools dynamically."""
+"""Tool registry — loads tools from tool_registry DB (Phase 6+)."""
 
 from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
+import asyncpg
 from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
-
-
-class ToolParam(BaseModel):
-    type: str = 'string'
-    description: str = ''
-    required: bool = False
-    enum: list[str] | None = None
 
 
 class ToolDef(BaseModel):
@@ -26,44 +19,73 @@ class ToolDef(BaseModel):
     description: str
     method: str
     path: str
+    base_url: str = ''
     params: dict[str, Any] = Field(default_factory=dict)
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    output_schema: dict[str, Any] | None = None
+    required_scopes: list[str] = Field(default_factory=list)
+    security_scheme: dict[str, Any] | None = None
+    enabled: bool = True
+    public: bool = False
+    tags: list[str] = Field(default_factory=list)
+    version: int = 1
+    registry_id: str | None = None  # UUID from tool_registry table
 
 
 class Registry:
-    """In-memory tool catalog loaded from providers.json."""
+    """In-memory tool catalog. Loads from tool_registry DB."""
 
     def __init__(self) -> None:
         self.tools: dict[str, ToolDef] = {}
 
-    def load_from_file(self, path: str | Path) -> int:
-        """Load tools from providers.json. Returns tool count."""
-        p = Path(path)
-        if not p.exists():
-            log.warning('providers.json not found at %s', p)
-            return 0
+    # ── DB loading ──────────────────────────────────────────────────────────
 
-        data = json.loads(p.read_text())
+    async def load_from_db(self, pool: asyncpg.Pool) -> int:
+        """Load enabled tools from tool_registry table. Returns tool count."""
+        rows = await pool.fetch(
+            'SELECT id, provider, name, description, method, path, '
+            'input_schema, output_schema, required_scopes, security_scheme, public, tags, version '
+            'FROM tool_registry WHERE enabled = true'
+        )
+        self.tools.clear()
         count = 0
 
-        for provider_key, provider_data in data.items():
-            nango_key = provider_data.get('nango_provider_key', provider_key)
-            tools_dict = provider_data.get('tools', {})
+        for row in rows:
+            input_schema = json.loads(row['input_schema']) if isinstance(row['input_schema'], str) else (row['input_schema'] or {})
+            output_schema = (
+                json.loads(row['output_schema']) if isinstance(row['output_schema'], str) else row['output_schema']
+            ) if row['output_schema'] else None
 
-            for tool_name, tool_data in tools_dict.items():
-                qualified_name = f'{provider_key}_{tool_name}'
-                self.tools[qualified_name] = ToolDef(
-                    name=qualified_name,
-                    provider=provider_key,
-                    nango_provider_key=nango_key,
-                    description=tool_data.get('description', ''),
-                    method=tool_data.get('method', 'GET'),
-                    path=tool_data.get('path', ''),
-                    params=tool_data.get('params', {}),
-                )
-                count += 1
+            nango_provider_key = (input_schema.get('nango_provider_key') or row['provider'])
 
-        log.info('Loaded %d tools from %s', count, p.name)
+            security_scheme = None
+            if row['security_scheme']:
+                security_scheme = json.loads(row['security_scheme']) if isinstance(row['security_scheme'], str) else row['security_scheme']
+
+            self.tools[row['name']] = ToolDef(
+                name=row['name'],
+                provider=row['provider'],
+                nango_provider_key=nango_provider_key,
+                description=row['description'] or '',
+                method=row['method'],
+                path=row['path'],
+                base_url=input_schema.get('base_url', ''),
+                params=input_schema.get('params', {}),
+                input_schema=input_schema,
+                output_schema=output_schema,
+                required_scopes=list(row['required_scopes'] or []),
+                security_scheme=security_scheme,
+                public=row['public'],
+                tags=list(row['tags'] or []),
+                version=row['version'],
+                registry_id=str(row['id']),
+            )
+            count += 1
+
+        log.info('Loaded %d enabled tools from tool_registry', count)
         return count
+
+    # ── Lookup helpers ───────────────────────────────────────────────────────
 
     def get(self, tool_name: str) -> ToolDef | None:
         return self.tools.get(tool_name)

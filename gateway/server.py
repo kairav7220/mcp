@@ -1,10 +1,13 @@
 """FastMCP Gateway — the main entry point.
 
-Loads tools from providers.json, exposes them via streamable-http with
+Loads tools from tool_registry DB, exposes them via streamable-http with
 API-key auth, proxies calls through Nango, and meters every call.
 
-Phase 2 additions: Redis client, abuse protection (rate limits, daily quota,
+Phase 2: Redis client, abuse protection (rate limits, daily quota,
 provider caps, circuit breaker) integrated into every tool call path.
+
+Phase 6: DB-only tool registry, hot-reload via reload_registry tool,
+per-user tool permissions (allowed_tools on API keys).
 
 Run:
     python gateway/server.py
@@ -67,10 +70,12 @@ async def gateway_lifespan(server: FastMCP) -> AsyncIterator[GatewayContext]:
     # Redis
     redis_client = redis.from_url(config.redis_url, decode_responses=True)
 
-    # Registry
+    # Registry — tool_registry DB (Phase 6)
     registry = Registry()
-    count = registry.load_from_file(config.providers_json_path)
-    log.info('Loaded %d tools from registry', count)
+    count = await registry.load_from_db(pool)
+    if count == 0:
+        log.error('No tools in tool_registry — run POST /api/v1/tools/import first')
+    log.info('Loaded %d tools from tool_registry', count)
 
     ctx = GatewayContext(pool=pool, registry=registry, redis=redis_client, config=config)
 
@@ -134,14 +139,31 @@ async def health_check(context: Context) -> dict:
     }
 
 
-# ── Core tool handler (auth → abuse checks → execute → meter) ───────────────
+# ── Hot-reload tool registry from DB ────────────────────────────────────────
+
+@mcp.tool()
+async def reload_registry(context: Context) -> dict:
+    """
+    Reload the tool registry from the database.
+
+    Call this after tools have been added, updated, or disabled
+    via the control plane admin API. Takes effect immediately
+    for the current gateway instance. All tools are accessible
+    via the call_tool function.
+    """
+    ctx = _get_ctx(context)
+    count = await ctx.registry.load_from_db(ctx.pool)
+    return {'success': True, 'tools_loaded': count, 'providers': ctx.registry.providers()}
+
+
+# ── Core tool handler (auth → permissions → abuse → execute → meter) ────────
 
 async def _handle_tool_call(
     ctx: GatewayContext,
     tool_def: ToolDef,
     arguments: dict,
 ) -> dict:
-    """Shared handler for both call_tool and dynamic provider tools."""
+    """Shared handler for all tool calls via call_tool."""
     start = time.monotonic()
 
     # 1. Authenticate (API key from HTTP header)
@@ -150,11 +172,23 @@ async def _handle_tool_call(
     if auth_result is None:
         return {'success': False, 'error': {'code': 'UNAUTHORIZED', 'message': 'Invalid or missing API key'}}
 
-    user_id, api_key_id = auth_result
+    user_id, api_key_id, allowed_tools = auth_result
     raw_key = authorization.split(' ', 1)[1].strip() if ' ' in authorization else authorization
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
-    # 2. Abuse protection (rate limits, daily quota, provider caps, circuit breaker)
+    # Resolve user email (Nango connections are keyed by email, not UUID)
+    user_email = ''
+    try:
+        row = await ctx.pool.fetchrow('SELECT email FROM users WHERE id = $1', user_id)
+        user_email = row['email'] if row else ''
+    except Exception:
+        pass
+
+    # 2. Per-user tool permission check
+    if allowed_tools and tool_def.name not in allowed_tools:
+        return {'success': False, 'error': {'code': 'FORBIDDEN', 'message': f"Tool '{tool_def.name}' not allowed by this API key"}}
+
+    # 3. Abuse protection (rate limits, daily quota, provider caps, circuit breaker)
     abuse_check = await check_abuse(
         redis_client=ctx.redis,
         pool=ctx.pool,
@@ -166,12 +200,12 @@ async def _handle_tool_call(
     if abuse_check is not None:
         return abuse_check
 
-    # 3. Execute via Nango
+    # 4. Execute via Nango (live connection lookup — no cached state)
     result = await execute_tool(
-        pool=ctx.pool,
         nango_host=ctx.config.nango_host,
         nango_secret=ctx.config.nango_secret,
         user_id=user_id,
+        user_email=user_email,
         tool_def=tool_def,
         arguments=arguments,
     )
@@ -180,7 +214,7 @@ async def _handle_tool_call(
     is_error = not result.get('success', True)
     status = 'error' if is_error else 'success'
 
-    # 4. Meter (fire-and-forget)
+    # 5. Meter (fire-and-forget)
     try:
         await record_tool_call(
             pool=ctx.pool,
@@ -194,7 +228,7 @@ async def _handle_tool_call(
     except Exception as e:
         log.warning('Metering write failed: %s', e)
 
-    # 5. Circuit breaker — record error for provider tracking
+    # 6. Circuit breaker — record error for provider tracking
     try:
         await record_call_result(
             r=ctx.redis,
@@ -208,7 +242,7 @@ async def _handle_tool_call(
     return result
 
 
-# ── Generic call_tool (low-level, for advanced clients) ─────────────────────
+# ── Generic call_tool ───────────────────────────────────────────────────────
 
 @mcp.tool()
 async def call_tool(
@@ -220,6 +254,7 @@ async def call_tool(
     Call any registered SaaS tool by name.
 
     Authentication uses the API key sent in the HTTP Authorization header.
+    If the API key has allowed_tools set, only those tools can be called.
 
     Args:
         tool_name: Fully qualified tool name (e.g. gmail_getProfile, slack_postMessage)
@@ -235,38 +270,6 @@ async def call_tool(
         return {'success': False, 'error': {'code': 'NOT_FOUND', 'message': f"Tool '{tool_name}' not found"}}
 
     return await _handle_tool_call(ctx, tool_def, arguments)
-
-
-# ── Dynamically register provider tools ──────────────────────────────────────
-
-def _register_dynamic_tools(registry: Registry) -> None:
-    for tool_def in registry.list_all():
-        _make_and_register_tool(tool_def)
-
-
-def _make_and_register_tool(tool_def: ToolDef) -> None:
-    full_desc = (
-        f'[{tool_def.provider.upper()}] {tool_def.method} {tool_def.path}\n\n'
-        f'{tool_def.description}'
-    )
-
-    @mcp.tool(name=tool_def.name, description=full_desc)
-    async def _handler(arguments: dict = {}, context: Context = None) -> dict:
-        ctx = _get_ctx(context)
-        return await _handle_tool_call(ctx, tool_def, arguments)
-
-    _handler.__name__ = tool_def.name
-    _handler.__qualname__ = tool_def.name
-
-
-# ── Register dynamic tools at module level ──────────────────────────────────
-
-_registry_for_startup = Registry()
-try:
-    _registry_for_startup.load_from_file(get_config().providers_json_path)
-    _register_dynamic_tools(_registry_for_startup)
-except Exception as e:
-    log.warning('Pre-load of providers.json failed (will retry at lifespan): %s', e)
 
 
 # ── Main ────────────────────────────────────────────────────────────────────

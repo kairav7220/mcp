@@ -91,6 +91,40 @@ CREATE TABLE IF NOT EXISTS user_connections (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(user_id, provider)
 );
+
+-- Phase 6: tool registry (hot-reloadable, replaces providers.json as source of truth)
+CREATE TABLE IF NOT EXISTS tool_registry (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider        TEXT NOT NULL,
+    name            TEXT UNIQUE NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    method          TEXT NOT NULL DEFAULT 'GET',
+    path            TEXT NOT NULL DEFAULT '',
+    input_schema    JSONB NOT NULL DEFAULT '{}',
+    output_schema   JSONB,
+    required_scopes TEXT[] NOT NULL DEFAULT '{}',
+    security_scheme JSONB,
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    public          BOOLEAN NOT NULL DEFAULT false,
+    tags            TEXT[] NOT NULL DEFAULT '{}',
+    version         INT NOT NULL DEFAULT 1,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_tool_registry_provider ON tool_registry(provider);
+CREATE INDEX IF NOT EXISTS idx_tool_registry_enabled ON tool_registry(enabled);
+
+-- User API keys (for API-key providers like Google Maps, SerpAPI, etc.)
+CREATE TABLE IF NOT EXISTS user_api_keys (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider    TEXT NOT NULL,
+    api_key     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON user_api_keys(user_id);
 """
 
 
