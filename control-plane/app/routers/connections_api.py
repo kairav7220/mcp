@@ -109,6 +109,45 @@ async def delete_connection(
     return {'ok': True}
 
 
+@router.post('/sync')
+async def sync_connections(user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """Reconcile user_connections from Nango (pull fallback).
+
+    Nango won't push auth webhooks on this build (empty subscription), so the
+    dashboard calls this after each connect and the table stays truthful:
+    upserts the user's live tagged connections, prunes rows whose Nango
+    connection is gone (revokes). Members sync only themselves.
+    """
+    cfg = get_config()
+    user_id = str(user['id'])
+    pool = await db.get_pool()
+
+    try:
+        live = await nango_admin.list_connections(cfg.nango_host, cfg.nango_secret, user_id=user_id)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f'Nango list failed: {e}') from e
+
+    live_ids: set[str] = set()
+    synced = 0
+    for c in live:
+        conn_id = str(c.get('connection_id', ''))
+        provider = str(c.get('provider_config_key', ''))
+        if not conn_id or not provider:
+            continue
+        live_ids.add(conn_id)
+        await db.upsert_connection(user_id, provider, conn_id, 'active')
+        synced += 1
+
+    pruned = 0
+    rows = await pool.fetch('SELECT nango_connection_id FROM user_connections WHERE user_id = $1', user_id)
+    for r in rows:
+        if r['nango_connection_id'] not in live_ids:
+            if await db.delete_connection(r['nango_connection_id']):
+                pruned += 1
+
+    return {'synced': synced, 'pruned': pruned}
+
+
 @router.post('/dedup/{provider}')
 async def dedup_connections(
     provider: str,

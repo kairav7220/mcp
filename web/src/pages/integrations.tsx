@@ -86,6 +86,8 @@ export function IntegrationsPage() {
 
       // Server-side dedup: remove older duplicates, keep newest
       const dedup = await api<{ removed: number }>(`/api/v1/connections/dedup/${item.nango_provider_key}`, { method: 'POST' })
+      // Pull-sync the read-model (Nango won't push webhooks on this build)
+      await api('/api/v1/connections/sync', { method: 'POST' }).catch(() => null)
       await connections.refetch()
 
       if (dedup.removed > 0) {

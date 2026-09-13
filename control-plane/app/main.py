@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_config
-from .db import apply_schema, close_pool
+from .db import apply_schema, close_pool, get_pool
 from .routers import api_keys, auth, connections, connections_api, metrics, tools, users, user_api_keys
 from .services import catalog as catalog_svc
 from .services import nango_admin
@@ -30,8 +30,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logging.basicConfig(level=getattr(logging, cfg.log_level.upper(), logging.INFO))
     log.info('Control plane starting…')
     await apply_schema()
-    app.state.catalog = catalog_svc.load_catalog(cfg.providers_json_path, cfg.nango_host, cfg.nango_secret)
-    log.info('Catalog loaded: %d providers', len(app.state.catalog))
     try:
         yield
     finally:
@@ -69,15 +67,16 @@ async def health() -> dict:
     return {
         'status': 'ok',
         'service': 'control-plane',
-        'catalog_providers': len(app.state.catalog),
         'timestamp': datetime.now(timezone.utc).isoformat(),
     }
 
 
 @app.get('/api/v1/catalog')
 async def provider_catalog() -> list[dict]:
-    """Provider catalog for the dashboard Integrations page."""
-    return app.state.catalog
+    """Provider catalog for the dashboard Integrations page (live from tool_registry DB)."""
+    cfg = get_config()
+    pool = await get_pool()
+    return await catalog_svc.load_catalog_from_db(pool, cfg.nango_host, cfg.nango_secret)
 
 
 if __name__ == '__main__':

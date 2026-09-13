@@ -107,6 +107,23 @@ def _get_authorization() -> str:
     return get_http_request().headers.get('authorization', '')
 
 
+async def _get_user_providers(pool: asyncpg.Pool, user_id: str) -> set[str]:
+    """Return set of provider keys the user has access to (OAuth + API-key providers)."""
+    rows = await pool.fetch(
+        "SELECT DISTINCT provider FROM user_connections WHERE user_id = $1 AND status = 'active'",
+        user_id,
+    )
+    providers = {r['provider'] for r in rows}
+
+    key_rows = await pool.fetch(
+        'SELECT DISTINCT provider FROM user_api_keys WHERE user_id = $1',
+        user_id,
+    )
+    providers.update(r['provider'] for r in key_rows)
+
+    return providers
+
+
 # ── Health check resource ───────────────────────────────────────────────────
 
 @mcp.resource('health://status')
@@ -156,6 +173,43 @@ async def reload_registry(context: Context) -> dict:
     return {'success': True, 'tools_loaded': count, 'providers': ctx.registry.providers()}
 
 
+@mcp.tool()
+async def list_my_tools(context: Context) -> dict:
+    """
+    List tools you have access to based on your connected providers.
+
+    Only returns tools for providers you've actually connected via OAuth
+    or added API keys for. Call this first to know what's available.
+    """
+    ctx = _get_ctx(context)
+    authorization = _get_authorization()
+    auth_result = await authenticate_request(authorization, ctx.pool)
+    if auth_result is None:
+        return {'success': False, 'error': {'code': 'UNAUTHORIZED', 'message': 'Invalid or missing API key'}}
+
+    user_id, _, _ = auth_result
+    my_providers = await _get_user_providers(ctx.pool, user_id)
+
+    my_tools = []
+    for tool in ctx.registry.list_all():
+        provider_key = tool.nango_provider_key or tool.provider
+        if tool.provider in my_providers or provider_key in my_providers:
+            my_tools.append({
+                'name': tool.name,
+                'provider': tool.provider,
+                'description': tool.description[:120],
+                'method': tool.method,
+                'path': tool.path,
+            })
+
+    return {
+        'success': True,
+        'total': len(my_tools),
+        'connected_providers': sorted(my_providers),
+        'tools': my_tools,
+    }
+
+
 # ── Core tool handler (auth → permissions → abuse → execute → meter) ────────
 
 async def _handle_tool_call(
@@ -176,6 +230,15 @@ async def _handle_tool_call(
     raw_key = authorization.split(' ', 1)[1].strip() if ' ' in authorization else authorization
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
+    # 1b. Connection check — user must have connected the provider
+    my_providers = await _get_user_providers(ctx.pool, user_id)
+    provider_key = tool_def.nango_provider_key or tool_def.provider
+    if tool_def.provider not in my_providers and provider_key not in my_providers:
+        return {'success': False, 'error': {
+            'code': 'NOT_CONNECTED',
+            'message': f"You haven't connected {tool_def.provider} yet. Go to Integrations to connect it.",
+        }}
+
     # Resolve user email (Nango connections are keyed by email, not UUID)
     user_email = ''
     try:
@@ -184,8 +247,10 @@ async def _handle_tool_call(
     except Exception:
         pass
 
-    # 2. Per-user tool permission check
-    if allowed_tools and tool_def.name not in allowed_tools:
+    # 2. Per-user tool permission check (exact tool name or provider prefix: "gmail" covers gmail_*)
+    if allowed_tools and not any(
+        tool_def.name == s or tool_def.name.startswith(s + '_') for s in allowed_tools
+    ):
         return {'success': False, 'error': {'code': 'FORBIDDEN', 'message': f"Tool '{tool_def.name}' not allowed by this API key"}}
 
     # 3. Abuse protection (rate limits, daily quota, provider caps, circuit breaker)

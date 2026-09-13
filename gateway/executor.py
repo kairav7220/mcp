@@ -202,10 +202,11 @@ async def _execute_api_key_tool(
 
     # Make direct HTTP call
     try:
+        url = f"{tool_def.base_url.rstrip('/')}/{path.lstrip('/')}"
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.request(
                 method=tool_def.method,
-                url=f"{tool_def.base_url}{path}",
+                url=url,
                 headers=headers if headers else None,
                 params=query_params if query_params else None,
                 json=body,

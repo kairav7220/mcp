@@ -52,6 +52,7 @@ htmlcov/
 # Archived / scratch
 archive/
 archive_*/
+backups/
 
 # Gateway / Control Plane secrets
 gateway/.env
