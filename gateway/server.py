@@ -20,10 +20,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator
+from typing import Any
 
 import asyncpg
 import redis.asyncio as redis
@@ -32,8 +33,8 @@ from fastmcp.server.dependencies import get_http_request
 
 from .abuse import check_abuse
 from .auth import authenticate_request
-from .config import get_config
 from .circuit_breaker import record_call_result
+from .config import get_config
 from .db import apply_schema, close_pool, init_pool
 from .executor import execute_tool
 from .metrics import record_tool_call
@@ -312,8 +313,8 @@ async def _handle_tool_call(
 @mcp.tool()
 async def call_tool(
     tool_name: str,
-    arguments: dict = {},
-    context: Context = None,
+    arguments: dict | None = None,
+    context: Context | None = None,
 ) -> dict:
     """
     Call any registered SaaS tool by name.
@@ -334,7 +335,7 @@ async def call_tool(
     if tool_def is None:
         return {'success': False, 'error': {'code': 'NOT_FOUND', 'message': f"Tool '{tool_name}' not found"}}
 
-    return await _handle_tool_call(ctx, tool_def, arguments)
+    return await _handle_tool_call(ctx, tool_def, arguments or {})
 
 
 # ── Main ────────────────────────────────────────────────────────────────────

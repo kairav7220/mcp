@@ -1,6 +1,5 @@
 """Tests for the gateway — auth, registry, executor, metrics."""
 
-import hashlib
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -10,10 +9,9 @@ import pytest
 # Ensure gateway package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from gateway.auth import _hash_key, _extract_bearer
+from gateway.auth import _extract_bearer, _hash_key
+from gateway.executor import _extract_body, _fill_path_params
 from gateway.registry import Registry, ToolDef
-from gateway.executor import _fill_path_params, _extract_body
-
 
 # ── Auth tests ───────────────────────────────────────────────────────────────
 
@@ -58,6 +56,7 @@ class TestRegistry:
             'input_schema': '{}',
             'output_schema': None,
             'required_scopes': [],
+            'security_scheme': None,
             'public': False,
             'tags': [],
             'version': 1,
@@ -170,6 +169,6 @@ class TestExecutor:
 
 class TestMetrics:
     def test_record_import(self):
-        from gateway.metrics import record_tool_call, get_daily_usage
+        from gateway.metrics import get_daily_usage, record_tool_call
         assert callable(record_tool_call)
         assert callable(get_daily_usage)

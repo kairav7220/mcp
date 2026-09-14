@@ -121,7 +121,7 @@ def _extract_operations(spec: dict) -> list[dict]:
     base_url = ''
 
     # Extract base URL
-    if 'servers' in spec and spec['servers']:
+    if spec.get('servers'):
         base_url = spec['servers'][0].get('url', '')
     elif 'host' in spec:
         scheme = 'https' if 'schemes' in spec and 'https' in spec['schemes'] else 'http'
@@ -191,7 +191,7 @@ def _extract_operations(spec: dict) -> list[dict]:
             if '$ref' in request_body:
                 request_body = _resolve_ref(spec, request_body['$ref'])
             if 'content' in request_body:
-                for media_type, media_obj in request_body['content'].items():
+                for _media_type, media_obj in request_body['content'].items():
                     if 'schema' in media_obj:
                         body_schema = media_obj['schema']
                         if '$ref' in body_schema:

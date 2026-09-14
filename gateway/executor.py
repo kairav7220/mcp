@@ -30,7 +30,7 @@ def _extract_body(tool_def: ToolDef, args: dict[str, Any]) -> dict[str, Any] | N
 
     body_schema = tool_def.params['_body']
     body: dict[str, Any] = {}
-    for field_name, field_def in body_schema.items():
+    for field_name in body_schema:
         if field_name in args:
             body[field_name] = args[field_name]
     return body if body else None

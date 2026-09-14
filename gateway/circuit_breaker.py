@@ -85,8 +85,6 @@ async def check_circuit_breaker(
         return True, 'half_open', None
 
     # Count errors in the window
-    now_bucket = int(now // 60)
-    total_calls = 0
     total_errors = 0
 
     for offset in range(max(1, error_window_seconds // 60)):

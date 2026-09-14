@@ -48,7 +48,10 @@ def verify_supabase_jwt(token: str, jwt_secret: str, supabase_url: str = '') -> 
     if not token:
         raise AuthError('Missing token')
 
-    header = jwt.get_unverified_header(token)
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.InvalidTokenError as e:
+        raise AuthError(f'Invalid token: {e}') from e
     alg = header.get('alg', '')
 
     if alg == 'ES256':

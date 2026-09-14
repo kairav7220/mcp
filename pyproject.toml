@@ -1,0 +1,32 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 140
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF", "S", "DTZ", "PERF", "ASYNC", "N", "RET"]
+ignore = [
+    "B008",    # Depends() in FastAPI signatures — standard pattern
+    "BLE001",  # broad Exception catches — intentional in error handlers
+    "S110",    # try-except-pass — intentional for fallbacks
+    "S608",    # SQL injection — false positive: we use parameterized queries ($1, $2)
+    "N999",    # invalid module name "control-plane" — directory name, not importable
+    "ASYNC210", # blocking HTTP in sync helper called from async — acceptable
+    "ASYNC240", # blocking pathlib in sync helper — acceptable
+    "DTZ011",  # date.today() — fine for local date logic
+    "E501",    # line length — cosmetic
+    "SIM108",  # ternary — readability preference
+    "SIM102",  # nested if — readability preference
+    "SIM117",  # nested with — readability preference
+    "PERF401", # list comprehension — readability preference
+    "PERF102", # .values()/.keys() — minor perf, readability OK
+    "UP017",   # datetime.UTC alias — 3.14+ only
+    "RUF100",  # unused noqa — harmless
+    "RUF059",  # unused unpacked variable — intentional in tests
+    "N806",    # variable naming in tests — intentional
+    "E402",    # module imports not at top — test sys.path manipulation
+    "RET505",  # unnecessary elif — style preference
+    "S104",    # binding to 0.0.0.0 — intentional for Docker/container
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B008", "S", "BLE001", "E402", "RUF059", "N806", "F"]

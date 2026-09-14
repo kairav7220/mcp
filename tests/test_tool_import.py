@@ -2,15 +2,15 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'control-plane'))
 
-from app.services.tool_import import _extract_operations, _resolve_ref, _schema_to_params
-
+from app.services.tool_import import (
+    _extract_operations,
+    _resolve_ref,
+    _schema_to_params,
+)
 
 # ── OpenAPI parsing tests ───────────────────────────────────────────────────
 

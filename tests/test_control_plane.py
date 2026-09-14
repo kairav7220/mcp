@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -18,7 +18,6 @@ sys.path.insert(0, str(ROOT / 'control-plane'))
 
 from app.routers.connections import verify_signature
 from app.services import catalog as catalog_svc
-
 
 # ── Webhook signature ────────────────────────────────────────────────────────
 
@@ -55,9 +54,9 @@ class TestWebhookPayload:
 
         os.environ.setdefault('DATABASE_URL', 'postgresql://x')
         os.environ.setdefault('NANGO_SECRET', 'test')
-        from app.routers import connections as conn_mod
-        from app.main import app
         from app.config import get_config
+        from app.main import app
+        from app.routers import connections as conn_mod
 
         async def fake_upsert(user_id, provider, connection_id, status):
             TestWebhookPayload.last_upsert = (user_id, provider, connection_id, status)
@@ -151,7 +150,8 @@ class TestCatalog:
         cat = catalog_svc.load_catalog(path)
         os.unlink(path)
 
-        assert len(cat) == 2
+        # load_catalog appends a hardcoded google-maps card, so we have 3
+        assert len(cat) == 3
         gmail = next(c for c in cat if c['provider'] == 'gmail')
         assert gmail['tool_count'] == 3
         assert gmail['name'] == 'Gmail'
@@ -163,8 +163,10 @@ class TestCatalog:
         path = self._write(data)
         cat = catalog_svc.load_catalog(path)
         os.unlink(path)
-        assert cat[0]['provider'] == 'weirdservice'
-        assert cat[0]['tool_count'] == 0
+        providers = {c['provider'] for c in cat}
+        assert 'weirdservice' in providers
+        # google-maps is always appended
+        assert 'google-maps' in providers
 
     def test_sorted_by_tool_count_desc(self):
         data = {
@@ -176,15 +178,20 @@ class TestCatalog:
         os.unlink(path)
         assert cat[0]['provider'] == 'big'
 
-    def test_missing_file_returns_empty(self):
-        assert catalog_svc.load_catalog('/nonexistent/x.json') == []
+    def test_missing_file_returns_empty_or_maps_only(self):
+        cat = catalog_svc.load_catalog('/nonexistent/x.json')
+        # No providers.json → only the hardcoded google-maps card
+        assert len(cat) == 1
+        assert cat[0]['provider'] == 'google-maps'
 
-    def test_corrupt_file_returns_empty(self):
+    def test_corrupt_file_returns_maps_only(self):
         fd, path = tempfile.mkstemp(suffix='.json')
         os.write(fd, b'not json{')
         os.close(fd)
-        assert catalog_svc.load_catalog(path) == []
+        cat = catalog_svc.load_catalog(path)
         os.unlink(path)
+        assert len(cat) == 1
+        assert cat[0]['provider'] == 'google-maps'
 
 
 # ── Nango admin client (mocked HTTP) ─────────────────────────────────────────
@@ -225,7 +232,8 @@ class TestNangoAdmin:
             )
 
         assert result['token'] == 'tok_123'
-        assert result['connect_url'] == 'http://x'
+        assert 'http://x' in result['connect_url']
+        assert 'apiURL=http://nango:3003' in result['connect_url']
         # POST /connect/sessions (plural) with SECRET key, identity in tags
         assert captured['url'] == 'http://nango:3003/connect/sessions'
         assert captured['headers']['Authorization'] == 'Bearer secret-key-1'

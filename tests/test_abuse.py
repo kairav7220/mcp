@@ -5,15 +5,24 @@ These tests mock Redis to run without a live instance.
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from gateway.rate_limit import check_rate_limit, check_provider_cap, _minute_bucket, _hour_bucket
-from gateway.circuit_breaker import check_circuit_breaker, record_call_result, reset_circuit_breaker
-from gateway.abuse import check_abuse, _deny
+from gateway.abuse import _deny, check_abuse
+from gateway.circuit_breaker import (
+    check_circuit_breaker,
+    record_call_result,
+    reset_circuit_breaker,
+)
+from gateway.rate_limit import (
+    _hour_bucket,
+    _minute_bucket,
+    check_provider_cap,
+    check_rate_limit,
+)
 
 
 def _mock_redis(pipe_execute_result=None):

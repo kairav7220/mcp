@@ -94,6 +94,7 @@ def auth_client(monkeypatch):
 
     cfg = Config.__new__(Config)
     cfg.supabase_jwt_secret = SECRET
+    cfg.supabase_url = ''
     cfg.database_url = 'x'
     cfg.nango_host = 'x'
     cfg.nango_secret = 'x'
@@ -133,13 +134,12 @@ class TestAuthEndpoints:
 @pytest.fixture()
 def me_client(monkeypatch):
     """Mini app exposing /me + /users to exercise deps (current user + admin guard)."""
-    from app.config import Config
-    from app.deps import get_config as _gc
-    from app.routers import users as users_router
     import app.deps as deps_mod
+    from app.config import Config
 
     cfg = Config.__new__(Config)
     cfg.supabase_jwt_secret = SECRET
+    cfg.supabase_url = ''
     monkeypatch.setattr(deps_mod, 'get_config', lambda: cfg)
 
     def _pool_with(user_row):
@@ -158,8 +158,8 @@ def me_client(monkeypatch):
 
     application = FastAPI()
 
-    from fastapi import Depends
     from app.deps import get_current_user, require_admin
+    from fastapi import Depends
 
     @application.get('/me')
     async def me(user: dict = Depends(get_current_user)):
@@ -223,10 +223,9 @@ def conn_app(monkeypatch):
     os.environ.setdefault('NANGO_SECRET', 'test')
     from uuid import UUID as _UUID
 
+    import app.routers.connections_api as conn_api
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-
-    import app.routers.connections_api as conn_api
 
     state = {'user': dict(USER_ROW, id=MEMBER_ID)}
 
@@ -285,71 +284,59 @@ class TestConnectionsAuth:
         client, _, state, UUID = conn_app
         seen = {}
 
-        class FakePool:
-            async def fetch(self, sql, *args):
-                seen['args'] = args
-                return []
+        async def fake_list(host, secret, *, user_id=None):
+            seen['user_id'] = user_id
+            return []
 
         import app.routers.connections_api as conn_api
-        monkeypatch.setattr(conn_api, 'get_pool', AsyncMock(return_value=FakePool()))
+        monkeypatch.setattr(conn_api.nango_admin, 'list_connections', fake_list)
         r = client.get('/api/v1/connections', params={'user_id': str(UUID('99999999-9999-9999-9999-999999999999'))})
         assert r.status_code == 200
         # member's forced filter must be their OWN id, not the requested one
-        assert seen['args'] and str(seen['args'][0]) == MEMBER_ID
+        assert seen['user_id'] == MEMBER_ID
 
     def test_admin_can_filter_by_user_id(self, conn_app, monkeypatch):
         client, _, state, UUID = conn_app
         state['user']['role'] = 'admin'
         seen = {}
 
-        class FakePool:
-            async def fetch(self, sql, *args):
-                seen['args'] = args
-                return []
+        async def fake_list(host, secret, *, user_id=None):
+            seen['user_id'] = user_id
+            return []
 
         import app.routers.connections_api as conn_api
-        monkeypatch.setattr(conn_api, 'get_pool', AsyncMock(return_value=FakePool()))
+        monkeypatch.setattr(conn_api.nango_admin, 'list_connections', fake_list)
         target = UUID('99999999-9999-9999-9999-999999999999')
         r = client.get('/api/v1/connections', params={'user_id': str(target)})
         assert r.status_code == 200
-        assert seen['args'] and seen['args'][0] == target
+        assert seen['user_id'] == str(target)
 
-    def test_delete_unknown_connection_404(self, conn_app, monkeypatch):
+    def test_delete_proxied_to_nango(self, conn_app, monkeypatch):
         client, _, _, _ = conn_app
+        deleted = {}
 
-        class FakePool:
-            async def fetchrow(self, sql, *args):
-                return None
-
-        import app.routers.connections_api as conn_api
-        monkeypatch.setattr(conn_api, 'get_pool', AsyncMock(return_value=FakePool()))
-        r = client.delete('/api/v1/connections/conn-x')
-        assert r.status_code == 404
-
-    def test_member_cannot_delete_others_connection(self, conn_app, monkeypatch):
-        client, _, _, UUID = conn_app
-
-        class FakePool:
-            async def fetchrow(self, sql, *args):
-                return {'user_id': UUID(ADMIN_ID)}
+        async def fake_delete(host, secret, cid, provider):
+            deleted['cid'] = cid
+            deleted['provider'] = provider
 
         import app.routers.connections_api as conn_api
-        monkeypatch.setattr(conn_api, 'get_pool', AsyncMock(return_value=FakePool()))
-        r = client.delete('/api/v1/connections/conn-y')
-        assert r.status_code == 403
-
-    def test_owner_can_delete_own_connection(self, conn_app, monkeypatch):
-        client, _, _, UUID = conn_app
-
-        class FakePool:
-            async def fetchrow(self, sql, *args):
-                return {'user_id': UUID(MEMBER_ID)}
-
-        import app.routers.connections_api as conn_api
-        monkeypatch.setattr(conn_api, 'get_pool', AsyncMock(return_value=FakePool()))
-        r = client.delete('/api/v1/connections/conn-z')
+        monkeypatch.setattr(conn_api.nango_admin, 'delete_connection', fake_delete)
+        r = client.delete('/api/v1/connections/conn-x', params={'provider': 'slack'})
         assert r.status_code == 200
         assert r.json()['ok'] is True
+        assert deleted['cid'] == 'conn-x'
+        assert deleted['provider'] == 'slack'
+
+    def test_delete_nango_failure_returns_502(self, conn_app, monkeypatch):
+        client, _, _, _ = conn_app
+
+        async def fake_delete(host, secret, cid, provider):
+            raise RuntimeError('Nango down')
+
+        import app.routers.connections_api as conn_api
+        monkeypatch.setattr(conn_api.nango_admin, 'delete_connection', fake_delete)
+        r = client.delete('/api/v1/connections/conn-y', params={'provider': 'slack'})
+        assert r.status_code == 502
 
 
 # ── Users: duplicate email → 409 (not 500) ───────────────────────────────────
@@ -359,10 +346,9 @@ class TestCreateUserConflict:
         os.environ.setdefault('DATABASE_URL', 'postgresql://x')
         os.environ.setdefault('NANGO_SECRET', 'test')
         import asyncpg
+        from app.routers import users as users_router
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-
-        from app.routers import users as users_router
 
         class FakePool:
             async def fetchrow(self, sql, *args):

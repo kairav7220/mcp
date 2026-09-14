@@ -9,10 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import TypeAdapter
 
-from ..config import get_config
 from ..db import get_pool
 from ..deps import get_current_user
-from ..schemas import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
+from ..schemas import ApiKeyCreate, ApiKeyCreated
 from ..security import generate_api_key
 
 router = APIRouter(prefix='/api/v1/api-keys', tags=['api-keys'])
@@ -39,7 +38,6 @@ def _out(row) -> dict:
 @router.post('', status_code=201)
 async def create_key(req: ApiKeyCreate, user: dict = Depends(get_current_user)) -> ApiKeyCreated:
     """Create an API key for yourself (admins may target another user later via /users scope)."""
-    cfg = get_config()
     raw, key_hash, prefix = generate_api_key()
 
     expires_at = None
