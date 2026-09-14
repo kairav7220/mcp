@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
-
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 class TokenRequest(BaseModel):

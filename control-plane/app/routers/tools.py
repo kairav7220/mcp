@@ -8,10 +8,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..deps import require_admin
-from ..db import get_pool
-from ..services.tool_import import import_providers_json, import_openapi_spec
 from ..config import get_config
+from ..db import get_pool
+from ..deps import require_admin
+from ..services.tool_import import import_openapi_spec, import_providers_json
 
 router = APIRouter(prefix='/api/v1/tools', tags=['tools'])
 

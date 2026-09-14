@@ -86,6 +86,6 @@ async def nango_webhook(request: Request):
             await db.upsert_connection(user_id, str(provider), str(connection_id), status)
             return {'ok': True, 'action': status}
         return {'ok': True, 'ignored': f'unhandled operation {operation}'}
-    except Exception as e:  # noqa: BLE001 — webhook must always 200 so Nango doesn't retry-storm
+    except Exception as e:
         log.exception('Webhook processing failed: %s', e)
         return {'ok': False, 'error': str(e)}

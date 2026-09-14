@@ -8,16 +8,25 @@ server-side; audit log on every admin/self-service action.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_config
 from .db import apply_schema, close_pool, get_pool
-from .routers import api_keys, auth, connections, connections_api, metrics, tools, users, user_api_keys
+from .routers import (
+    api_keys,
+    auth,
+    connections,
+    connections_api,
+    metrics,
+    tools,
+    user_api_keys,
+    users,
+)
 from .services import catalog as catalog_svc
 from .services import nango_admin
 
@@ -81,6 +90,7 @@ async def provider_catalog() -> list[dict]:
 
 if __name__ == '__main__':
     import os
+
     import uvicorn
 
     uvicorn.run(app, host='0.0.0.0', port=int(os.getenv('CONTROL_PLANE_PORT', '8001')))

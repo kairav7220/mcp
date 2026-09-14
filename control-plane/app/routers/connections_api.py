@@ -13,9 +13,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
+from .. import db
 from ..config import get_config
 from ..deps import get_current_user
-from .. import db
 from ..services import nango_admin
 
 router = APIRouter(prefix='/api/v1/connections', tags=['connections'])
@@ -55,7 +55,7 @@ async def create_session(
             end_user_name=name,
             webhook_url_override=cfg.webhook_url_override or None,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f'Nango session creation failed: {e}') from e
 
     return {'user_id': user_id, **session}
@@ -103,7 +103,7 @@ async def delete_connection(
     cfg = get_config()
     try:
         await nango_admin.delete_connection(cfg.nango_host, cfg.nango_secret, nango_connection_id, provider)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f'Nango delete failed: {e}') from e
 
     return {'ok': True}
@@ -124,7 +124,7 @@ async def sync_connections(user: dict = Depends(get_current_user)) -> dict[str, 
 
     try:
         live = await nango_admin.list_connections(cfg.nango_host, cfg.nango_secret, user_id=user_id)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f'Nango list failed: {e}') from e
 
     live_ids: set[str] = set()

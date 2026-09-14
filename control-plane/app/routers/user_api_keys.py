@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..deps import get_current_user
 from ..db import get_pool
+from ..deps import get_current_user
 
 router = APIRouter(prefix='/api/v1/user-api-keys', tags=['user-api-keys'])
 

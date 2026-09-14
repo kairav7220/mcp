@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from ..config import get_config
+from ..db import get_pool
 from ..deps import get_current_user
 from ..schemas import ProfileResponse, TokenRequest
 from ..security import AuthError, verify_supabase_jwt
-from ..config import get_config
-from ..db import get_pool
 
 router = APIRouter(prefix='/api/v1', tags=['auth'])
 

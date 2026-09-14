@@ -95,4 +95,4 @@ async def delete_connection(host: str, secret: str, nango_connection_id: str, pr
 
 async def trigger_sync_if_needed() -> None:  # placeholder for later phases
     """Reserved: post-connect backfills (Phase 4+)."""
-    return None
+    return
