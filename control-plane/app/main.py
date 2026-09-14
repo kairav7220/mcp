@@ -48,7 +48,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title='SaaS Hub Control Plane',
+    title='Plugmere Control',
+    description='Every plug in its place.',
     lifespan=lifespan,
 )
 

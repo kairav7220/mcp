@@ -92,7 +92,7 @@ async def gateway_lifespan(server: FastMCP) -> AsyncIterator[GatewayContext]:
 # ── Server (module-level export for FastMCP Cloud / uvicorn) ────────────────
 
 mcp = FastMCP(
-    name='SaaS Hub Gateway',
+    name='Plugmere Gateway',
     lifespan=gateway_lifespan,
 )
 

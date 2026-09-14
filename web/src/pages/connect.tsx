@@ -23,7 +23,7 @@ function buildSnippets(gatewayUrl: string, apiKey: string): Snippet[] {
       language: 'json',
       code: JSON.stringify({
         mcp: {
-          'mcp-hub': {
+          'plugmere': {
             type: 'remote',
             url: gatewayUrl,
             enabled: true,
@@ -37,7 +37,7 @@ function buildSnippets(gatewayUrl: string, apiKey: string): Snippet[] {
       language: 'json',
       code: JSON.stringify({
         mcpServers: {
-          'mcp-hub': {
+          'plugmere': {
             url: gatewayUrl,
             transport: 'http',
             headers: { Authorization: authHeader },
@@ -48,14 +48,14 @@ function buildSnippets(gatewayUrl: string, apiKey: string): Snippet[] {
     {
       name: 'Claude Code CLI',
       language: 'bash',
-      code: `claude mcp add --transport http mcp-hub ${gatewayUrl} \\\n  --header "Authorization: ${authHeader}"`,
+      code: `claude mcp add --transport http plugmere ${gatewayUrl} \\\n  --header "Authorization: ${authHeader}"`,
     },
     {
       name: 'Cursor / VS Code Copilot',
       language: 'json',
       code: JSON.stringify({
         mcpServers: {
-          'mcp-hub': {
+          'plugmere': {
             url: gatewayUrl,
             headers: { Authorization: authHeader },
           },

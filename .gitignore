@@ -53,6 +53,7 @@ htmlcov/
 archive/
 archive_*/
 backups/
+scratch/
 
 # Gateway / Control Plane secrets
 gateway/.env

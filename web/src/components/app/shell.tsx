@@ -57,7 +57,7 @@ export function Shell() {
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-14 shrink-0 items-center gap-4 border-b px-6">
-        <Link to="/overview" className="text-lg font-semibold tracking-tight hover:opacity-80 transition-opacity">MCP Hub</Link>
+        <Link to="/overview" className="text-lg font-semibold tracking-tight hover:opacity-80 transition-opacity"><span className="hidden sm:inline">Plugmere</span><span className="sm:hidden">P</span></Link>
         <nav className="ml-8 flex gap-1">
           {NAV_ITEMS.map(({ to, label, icon: Icon, admin }) => {
             if (admin && !isAdmin) return null
