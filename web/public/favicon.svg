@@ -1,8 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <style>
-    text { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; font-weight: 700; }
-    .p { fill: #0A1F2C; }
-    @media (prefers-color-scheme: dark) { .p { fill: #FFFFFF; } }
-  </style>
-  <text x="16" y="25" text-anchor="middle" font-size="26" class="p">P</text>
+  <text x="16" y="25" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-weight="700" font-size="26" fill="#0A1F2C">P</text>
 </svg>
